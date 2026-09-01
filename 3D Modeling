@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VR 3D World Exploration</title>
+  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+  <!-- Environment component for terrain, sky, trees -->
+  <script src="https://unpkg.com/aframe-environment-component@1.3.3/dist/aframe-environment-component.min.js"></script>
+  
+  <script>
+    // Global state
+    const state = {
+      discovered: new Set(),
+      totalPoints: 3
+    };
+
+    // Data for interactive objects
+    const objectData = {
+      'crystal': { name: 'Glowing Crystal', description: 'A rare energy crystal found in these lands. It pulses with mysterious power.' },
+      'statue': { name: 'Ancient Statue', description: 'A relic from a forgotten civilization that once inhabited this forest.' },
+      'fossil': { name: 'Dinosaur Fossil', description: 'Remains of a giant creature from millions of years ago.' }
+    };
+
+    // Component to handle interactions with objects
+    AFRAME.registerComponent('interactive-object', {
+      schema: { id: { type: 'string' } },
+      init: function () {
+        const el = this.el;
+        
+        el.addEventListener('mouseenter', () => {
+          el.setAttribute('scale', '1.2 1.2 1.2');
+        });
+        
+        el.addEventListener('mouseleave', () => {
+          el.setAttribute('scale', '1 1 1');
+        });
+
+        el.addEventListener('click', () => {
+          const data = objectData[this.data.id];
+          if (!data) return;
+
+          // Track discovery
+          if (!state.discovered.has(this.data.id)) {
+            state.discovered.add(this.data.id);
+            updateProgress();
+            
+            // Visual feedback - change color when discovered
+            if(el.components.material) {
+               el.setAttribute('material', 'emissiveIntensity', '0.2');
+            }
+          }
+
+          // Show info panel in VR
+          showInfoPanel(data.name, data.description);
+        });
+      }
+    });
+
+    // Custom thumbstick movement component for Meta Quest controllers
+    AFRAME.registerComponent('thumbstick-movement', {
+      init: function () {
+        this.cameraRig = document.querySelector('#cameraRig');
+        this.direction = new THREE.Vector3();
+        this.speed = 0.05;
+        this.el.addEventListener('thumbstickmoved', this.logThumbstick.bind(this));
+        this.moveX = 0;
+        this.moveY = 0;
+      },
+      logThumbstick: function (evt) {
+        this.moveX = evt.detail.x;
+        this.moveY = evt.detail.y;
+      },
+      tick: function (time, delta) {
+        if (Math.abs(this.moveX) > 0.1 || Math.abs(this.moveY) > 0.1) {
+          const camera = document.querySelector('a-camera').object3D;
+          // Calculate movement relative to camera direction
+          const angle = camera.rotation.y;
+          const dx = this.moveX * Math.cos(angle) + this.moveY * Math.sin(angle);
+          const dz = -this.moveX * Math.sin(angle) + this.moveY * Math.cos(angle);
+          
+          this.cameraRig.object3D.position.x += dx * this.speed;
+          this.cameraRig.object3D.position.z += dz * this.speed;
+        }
+      }
+    });
+
+    function updateProgress() {
+      const progressText = document.querySelector('#progress-text');
+      progressText.setAttribute('value', `Discovered: ${state.discovered.size} / ${state.totalPoints}`);
+      
+      if(state.discovered.size === state.totalPoints) {
+         progressText.setAttribute('value', `Discovered: ${state.discovered.size} / ${state.totalPoints}\nExploration Complete!`);
+         progressText.setAttribute('color', '#00ff00');
+      }
+    }
+
+    function showInfoPanel(name, description) {
+      const panel = document.querySelector('#info-panel');
+      const title = document.querySelector('#info-title');
+      const desc = document.querySelector('#info-desc');
+      const player = document.querySelector('a-camera');
+
+      // Update text
+      title.setAttribute('value', name);
+      desc.setAttribute('value', description);
+
+      // Position the panel in front of the player
+      const position = new THREE.Vector3(0, 0, -2);
+      position.applyMatrix4(player.object3D.matrixWorld);
+      panel.object3D.position.copy(position);
+      
+      // Make it face the player
+      panel.object3D.lookAt(player.object3D.position);
+      
+      panel.setAttribute('visible', 'true');
+      panel.classList.add('clickable');
+    }
+
+    function hideInfoPanel() {
+      const panel = document.querySelector('#info-panel');
+      panel.setAttribute('visible', 'false');
+      panel.classList.remove('clickable');
+    }
+
+    // Register component for the close button
+    AFRAME.registerComponent('close-button', {
+      init: function () {
+        this.el.addEventListener('click', () => {
+          hideInfoPanel();
+        });
+        
+        this.el.addEventListener('mouseenter', () => {
+          this.el.setAttribute('color', '#ff5555');
+        });
+        
+        this.el.addEventListener('mouseleave', () => {
+          this.el.setAttribute('color', '#aa0000');
+        });
+      }
+    });
+
+    // Reset button functionality
+    AFRAME.registerComponent('reset-button', {
+      init: function () {
+        this.el.addEventListener('click', () => {
+          const rig = document.querySelector('#cameraRig');
+          rig.setAttribute('position', '0 0 0');
+        });
+        this.el.addEventListener('mouseenter', () => this.el.setAttribute('color', '#5555ff'));
+        this.el.addEventListener('mouseleave', () => this.el.setAttribute('color', '#0000aa'));
+      }
+    });
+
+  </script>
+</head>
+<body>
+  <a-scene xr-mode-ui="enabled: true; enterVRButton: #enter-vr">
+    
+    <!-- Custom Enter VR Button (if the default is hidden/customized) -->
+    <a-entity id="enter-vr" position="0 0 0"></a-entity>
+
+    <!-- Environment: A beautiful procedural forest -->
+    <a-entity environment="preset: forest; skyType: atmosphere; lighting: distant; groundColor: #3B5323; grid: none; fog: 0.6"></a-entity>
+
+    <!-- Ambient Lighting & Sun -->
+    <a-light type="ambient" color="#ccc" intensity="0.5"></a-light>
+    <a-light type="directional" position="-1 1 -0.5" intensity="0.8" color="#fff" castShadow="true"></a-light>
+
+    <!-- River / Lake Area -->
+    <a-plane position="-8 0.05 -10" rotation="-90 0 0" width="10" height="15" color="#4a90e2" material="opacity: 0.8; transparent: true"></a-plane>
+
+    <!-- Camera Rig for VR Movement -->
+    <a-entity id="cameraRig" position="0 0 0">
+      <a-camera position="0 1.6 0" wasd-controls look-controls>
+        <!-- Desktop fallback cursor -->
+        <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable" visible="false"></a-entity>
+      </a-camera>
+
+      <!-- Meta Quest 3S Controllers -->
+      <!-- Left Controller (Movement) -->
+      <a-entity laser-controls="hand: left" raycaster="objects: .clickable" thumbstick-movement></a-entity>
+      
+      <!-- Right Controller (Interaction/Pointing) -->
+      <a-entity laser-controls="hand: right" raycaster="objects: .clickable; showLine: true; far: 20" thumbstick-movement></a-entity>
+    </a-entity>
+
+    <!-- ==================== UI Elements ==================== -->
+    
+    <!-- Welcome Panel -->
+    <a-entity position="0 1.8 -3">
+      <a-plane width="2.5" height="1.5" color="#222" opacity="0.9" material="shader: flat">
+        <a-text value="Welcome to the 3D VR World!" align="center" position="0 0.5 0.01" width="4" color="#4facfe"></a-text>
+        <a-text value="Use the left/right thumbsticks to move.\nPoint and press the trigger to interact with glowing objects.\nExplore the forest and find 3 hidden artifacts." 
+                align="center" position="0 0 0.01" width="3" color="#fff"></a-text>
+        <a-text id="progress-text" value="Discovered: 0 / 3" align="center" position="0 -0.5 0.01" width="3" color="#ffff00"></a-text>
+      </a-plane>
+    </a-entity>
+
+    <!-- Reset/Return Button -->
+    <a-entity position="0 0.8 -2.5" class="clickable" reset-button>
+      <a-plane width="1.5" height="0.4" color="#0000aa" material="shader: flat">
+        <a-text value="Return to Start" align="center" position="0 0 0.01" width="3"></a-text>
+      </a-plane>
+    </a-entity>
+
+    <!-- Floating VR Information Panel (Hidden by default) -->
+    <a-entity id="info-panel" visible="false" position="0 2 -3">
+      <a-plane width="2" height="1.2" color="#111" opacity="0.95" material="shader: flat" side="double">
+        <a-text id="info-title" value="Item Name" align="center" position="0 0.4 0.01" width="4" color="#00f2fe"></a-text>
+        <a-text id="info-desc" value="Item Description goes here. It provides educational information." align="center" position="0 0 0.01" width="3" wrap-count="30" color="#ddd"></a-text>
+        
+        <!-- Close Button -->
+        <a-entity position="0 -0.4 0.01" class="clickable" close-button>
+          <a-plane width="0.8" height="0.3" color="#aa0000" material="shader: flat">
+            <a-text value="Close" align="center" position="0 0 0.01" width="3"></a-text>
+          </a-plane>
+        </a-entity>
+      </a-plane>
+    </a-entity>
+
+    <!-- ==================== Interactive Points of Interest ==================== -->
+
+    <!-- Crystal -->
+    <a-entity position="-5 1 -6" class="clickable" interactive-object="id: crystal" 
+              animation="property: position; to: -5 1.2 -6; dir: alternate; dur: 2000; loop: true">
+      <a-octahedron radius="0.5" color="#00ffff" material="emissive: #00ffff; emissiveIntensity: 0.8"></a-octahedron>
+      <a-light type="point" color="#00ffff" distance="3" intensity="0.5"></a-light>
+    </a-entity>
+
+    <!-- Statue -->
+    <a-entity position="6 0 -8" class="clickable" interactive-object="id: statue">
+      <a-box position="0 0.5 0" depth="1" height="1" width="1" color="#666" material="roughness: 1"></a-box>
+      <a-cylinder position="0 1.5 0" radius="0.4" height="1" color="#777" material="roughness: 1"></a-cylinder>
+      <a-sphere position="0 2.2 0" radius="0.35" color="#555" material="roughness: 1"></a-sphere>
+    </a-entity>
+
+    <!-- Fossil -->
+    <a-entity position="2 0.2 6" class="clickable" interactive-object="id: fossil" rotation="90 0 0">
+      <a-torus radius="0.5" radius-tubular="0.05" color="#e3dac9"></a-torus>
+      <a-cylinder position="0.5 0 0" radius="0.05" height="0.6" color="#e3dac9"></a-cylinder>
+      <a-cylinder position="-0.5 0 0" radius="0.05" height="0.6" color="#e3dac9"></a-cylinder>
+    </a-entity>
+
+  </a-scene>
+</body>
+</html>
